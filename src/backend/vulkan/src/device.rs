@@ -313,7 +313,7 @@ impl d::Device<B> for Device {
         };
     }
 
-    fn merge_pipeline_caches<I>(&self, target: &n::PipelineCache, sources: I) -> Result<(), OutOfMemory>
+    fn merge_pipeline_caches<I>(&self, target: &n::PipelineCache, sources: I) -> Result<(), d::OutOfMemory>
     where
         I: IntoIterator,
         I::Item: Borrow<n::PipelineCache>,
@@ -731,27 +731,27 @@ impl d::Device<B> for Device {
             }
         };
 
-        match result {
-            Ok(pipelines) |
-            Err((pipelines, error))=> {
-                let mut psos = pipelines.into_iter();
-                infos
-                    .into_iter()
-                    .map(|result| result.and_then(|_| {
-                        let pso = psos.next().unwrap();
-                        if pso == vk::Pipeline::null() {
-                            match error {
-                                vk::Result::ErrorOutOfHostMemory => Err(d::OutOfMemory::OutOfHostMemory),
-                                vk::Result::ErrorOutOfDeviceMemory => Err(d::OutOfMemory::OutOfDeviceMemory),
-                                _ => unreachable!(),
-                            }
-                        } else {
-                            Ok(n::GraphicsPipeline(pso))
-                        }
-                    }))
-                    .collect()
-            }
-        }
+        let (pipelines, error) = match result {
+            Ok(pipelines) => (pipelines, None),
+            Err((pipelines, error)) => (pipelines, Some(error)),
+        };
+
+        let mut psos = pipelines.into_iter();
+        infos
+            .into_iter()
+            .map(|result| result.and_then(|_| {
+                let pso = psos.next().unwrap();
+                if pso == vk::Pipeline::null() {
+                    match error {
+                        Some(vk::Result::ErrorOutOfHostMemory) => Err(d::OutOfMemory::OutOfHostMemory.into()),
+                        Some(vk::Result::ErrorOutOfDeviceMemory) => Err(d::OutOfMemory::OutOfDeviceMemory.into()),
+                        _ => unreachable!(),
+                    }
+                } else {
+                    Ok(n::GraphicsPipeline(pso))
+               }
+            }))
+            .collect()
     }
 
     fn create_compute_pipelines<'a, T>(
@@ -847,27 +847,27 @@ impl d::Device<B> for Device {
             }
         };
 
-        match result {
-            Ok(pipelines) |
-            Err((pipelines, error))=> {
-                let mut psos = pipelines.into_iter();
-                infos
-                    .into_iter()
-                    .map(|result| result.and_then(|_| {
-                        let pso = psos.next().unwrap();
-                        if pso == vk::Pipeline::null() {
-                            match error {
-                                vk::Result::ErrorOutOfHostMemory => Err(d::OutOfMemory::OutOfHostMemory.into()),
-                                vk::Result::ErrorOutOfDeviceMemory => Err(d::OutOfMemory::OutOfDeviceMemory.into()),
-                                _ => unreachable!(),
-                            }
-                        } else {
-                            Ok(n::ComputePipeline(pso))
-                        }
-                    }))
-                    .collect()
-            }
-        }
+        let (pipelines, error) = match result {
+            Ok(pipelines) => (pipelines, None),
+            Err((pipelines, error)) => (pipelines, Some(error)),
+        };
+
+        let mut psos = pipelines.into_iter();
+        infos
+            .into_iter()
+            .map(|result| result.and_then(|_| {
+                let pso = psos.next().unwrap();
+                if pso == vk::Pipeline::null() {
+                     match error {
+                         Some(vk::Result::ErrorOutOfHostMemory) => Err(d::OutOfMemory::OutOfHostMemory.into()),
+                         Some(vk::Result::ErrorOutOfDeviceMemory) => Err(d::OutOfMemory::OutOfDeviceMemory.into()),
+                         _ => unreachable!(),
+                     }
+                } else {
+                    Ok(n::ComputePipeline(pso))
+                }
+            }))
+            .collect()
     }
 
     fn create_framebuffer<T>(
@@ -1027,7 +1027,7 @@ impl d::Device<B> for Device {
     fn bind_buffer_memory(&self, memory: &n::Memory, offset: u64, buffer: UnboundBuffer) -> Result<n::Buffer, d::BindError> {
         let result = unsafe {
             self.raw.0.bind_buffer_memory((buffer.0).raw, memory.raw, offset)
-        });
+        };
 
         match result {
             Ok(()) => Ok(n::Buffer {
@@ -1058,7 +1058,7 @@ impl d::Device<B> for Device {
         };
 
         match result {
-            Ok((raw)) => Ok(n::BufferView { raw }),
+            Ok(raw) => Ok(n::BufferView { raw }),
             Err(vk::Result::ErrorOutOfHostMemory) => Err(d::OutOfMemory::OutOfHostMemory.into()),
             Err(vk::Result::ErrorOutOfDeviceMemory) => Err(d::OutOfMemory::OutOfDeviceMemory.into()),
             _ => unreachable!(),
@@ -1143,7 +1143,7 @@ impl d::Device<B> for Device {
         // TODO: check required type
         let result = unsafe {
             self.raw.0.bind_image_memory(image.0.raw, memory.raw, offset)
-        });
+        };
 
         match result {
             Ok(()) => Ok(image.0),
@@ -1169,7 +1169,7 @@ impl d::Device<B> for Device {
             image: image.raw,
             view_type: match conv::map_view_kind(kind, image.ty, is_cube) {
                 Some(ty) => ty,
-                None => return Err(image::ViewError::BadKind),
+                None => return Err(image::ViewError::BadKind(kind)),
             },
             format: conv::map_format(format),
             components: conv::map_swizzle(swizzle),
@@ -1227,7 +1227,7 @@ impl d::Device<B> for Device {
             Err(vk::Result::ErrorOutOfHostMemory) => Err(d::OutOfMemory::OutOfHostMemory.into()),
             Err(vk::Result::ErrorOutOfDeviceMemory) => Err(d::OutOfMemory::OutOfDeviceMemory.into()),
             _ => unreachable!(),
-        }        
+        }
     }
 
     fn create_descriptor_set_layout<I, J>(
@@ -1289,7 +1289,7 @@ impl d::Device<B> for Device {
             Err(vk::Result::ErrorOutOfHostMemory) => Err(d::OutOfMemory::OutOfHostMemory.into()),
             Err(vk::Result::ErrorOutOfDeviceMemory) => Err(d::OutOfMemory::OutOfDeviceMemory.into()),
             _ => unreachable!(),
-        }        
+        }
     }
 
     fn write_descriptor_sets<'a, I, J>(&self, write_iter: I)
@@ -1479,7 +1479,7 @@ impl d::Device<B> for Device {
         }
     }
 
-    fn invalidate_mapped_memory_ranges<'a, I, R>(&self, ranges: I)
+    fn invalidate_mapped_memory_ranges<'a, I, R>(&self, ranges: I) -> Result<(), d::OutOfMemory>
     where
         I: IntoIterator,
         I::Item: Borrow<(&'a n::Memory, R)>,
@@ -1531,7 +1531,6 @@ impl d::Device<B> for Device {
 
         let result = unsafe {
             self.raw.0.create_fence(&info, None)
-                        .expect("Error on fence creation") // TODO: error handling
         };
 
         match result {
@@ -1580,7 +1579,7 @@ impl d::Device<B> for Device {
             Err(vk::Result::ErrorOutOfHostMemory) => Err(d::OutOfMemory::OutOfHostMemory.into()),
             Err(vk::Result::ErrorOutOfDeviceMemory) => Err(d::OutOfMemory::OutOfDeviceMemory.into()),
             _ => unreachable!(),
-            
+
         }
     }
 
@@ -1600,7 +1599,7 @@ impl d::Device<B> for Device {
         unsafe { self.raw.0.free_memory(memory.raw, None); }
     }
 
-    fn create_query_pool(&self, ty: query::Type, query_count: query::Id) -> Result<n::QueryPool, OutOfMemory> {
+    fn create_query_pool(&self, ty: query::Type, query_count: query::Id) -> Result<n::QueryPool, query::CreationError> {
         let (query_type, pipeline_statistics) = match ty {
             query::Type::Occlusion =>
                 (vk::QueryType::Occlusion, vk::QueryPipelineStatisticFlags::empty()),
@@ -1635,7 +1634,7 @@ impl d::Device<B> for Device {
         &self, pool: &n::QueryPool, queries: Range<query::Id>,
         data: &mut [u8], stride: buffer::Offset,
         flags: query::ResultFlags,
-    ) -> Result<bool, OomOrDeviceLost> {
+    ) -> Result<bool, d::OomOrDeviceLost> {
         let result = unsafe {
             self.raw.0
                 .fp_v1_0()
@@ -1650,9 +1649,9 @@ impl d::Device<B> for Device {
         match result {
             vk::Result::Success => Ok(true),
             vk::Result::NotReady => Ok(false),
-            Err(vk::Result::ErrorDeviceLost) => Err(d::DeviceLost.into()),
-            Err(vk::Result::ErrorOutOfHostMemory) => Err(d::OutOfMemory::OutOfHostMemory.into()),
-            Err(vk::Result::ErrorOutOfDeviceMemory) => Err(d::OutOfMemory::OutOfDeviceMemory.into()),
+            vk::Result::ErrorDeviceLost => Err(d::DeviceLost.into()),
+            vk::Result::ErrorOutOfHostMemory => Err(d::OutOfMemory::OutOfHostMemory.into()),
+            vk::Result::ErrorOutOfDeviceMemory => Err(d::OutOfMemory::OutOfDeviceMemory.into()),
             _ => unreachable!(),
         }
     }
@@ -1701,19 +1700,19 @@ impl d::Device<B> for Device {
         let result = unsafe { functor.create_swapchain_khr(&info, None) };
 
         let swapchain_raw = match result {
-            Ok(swapchain_raw) => Ok(swapchain_raw),
+            Ok(swapchain_raw) => swapchain_raw,
             Err(vk::Result::ErrorOutOfHostMemory) => return Err(d::OutOfMemory::OutOfHostMemory.into()),
             Err(vk::Result::ErrorOutOfDeviceMemory) => return Err(d::OutOfMemory::OutOfDeviceMemory.into()),
             Err(vk::Result::ErrorDeviceLost) => return Err(d::DeviceLost.into()),
             Err(vk::Result::ErrorSurfaceLostKhr) => return Err(d::SurfaceLost.into()),
             Err(vk::Result::ErrorNativeWindowInUseKhr) => return Err(d::WindowInUse.into()),
-            _ => unreachable!(),
+            _ => unreachable!("Unexpected result - driver bug? {:?}", result),
         };
 
         let result = functor.get_swapchain_images_khr(swapchain_raw);
 
-        match result {
-            Ok(backbuffer_images) => Ok(backbuffer_images),
+        let backbuffer_images = match result {
+            Ok(backbuffer_images) => backbuffer_images,
             Err(vk::Result::ErrorOutOfHostMemory) => return Err(d::OutOfMemory::OutOfHostMemory.into()),
             Err(vk::Result::ErrorOutOfDeviceMemory) => return Err(d::OutOfMemory::OutOfDeviceMemory.into()),
             _ => unreachable!(),
