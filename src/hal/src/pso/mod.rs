@@ -38,6 +38,12 @@ pub enum CreationError {
     OutOfMemory(device::OutOfMemory),
 }
 
+impl From<device::OutOfMemory> for CreationError {
+    fn from(err: device::OutOfMemory) -> Self {
+        CreationError::OutOfMemory(err)
+    }
+}
+
 bitflags!(
     /// Stages of the logical pipeline.
     ///

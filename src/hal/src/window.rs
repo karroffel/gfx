@@ -31,8 +31,8 @@
 //! # let mut swapchain: empty::Swapchain = return;
 //! # let device: empty::Device = return;
 //! # let mut present_queue: CommandQueue<empty::Backend, Graphics> = return;
-//! let acquisition_semaphore = device.create_semaphore();
-//! let render_semaphore = device.create_semaphore();
+//! let acquisition_semaphore = device.create_semaphore().unwrap();
+//! let render_semaphore = device.create_semaphore().unwrap();
 //!
 //! let frame = swapchain.acquire_image(!0, FrameSync::Semaphore(&acquisition_semaphore));
 //! // render the scene..

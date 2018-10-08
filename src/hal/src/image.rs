@@ -136,10 +136,19 @@ pub enum ViewError {
     BadFormat(format::Format),
     /// Unsupported view kind.
     #[fail(display = "An incompatible kind ({:?}) was requested for the view", _0)]
-    BadKind(Kind),
+    BadKind(ViewKind),
+    /// Out of either Host or Device memory
+    #[fail(display = "{}", _0)]
+    OutOfMemory(device::OutOfMemory),
     /// The backend refused for some reason.
     #[fail(display = "The backend refused for some reason")]
     Unsupported,
+}
+
+impl From<device::OutOfMemory> for ViewError {
+    fn from(error: device::OutOfMemory) -> Self {
+        ViewError::OutOfMemory(error)
+    }
 }
 
 /// An error associated with selected image layer.

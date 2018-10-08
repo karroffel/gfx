@@ -462,7 +462,7 @@ pub trait Device<B: Backend>: Any + Send + Sync {
     fn destroy_image_view(&self, view: B::ImageView);
 
     /// Create a new sampler object
-    fn create_sampler(&self, info: image::SamplerInfo) -> Result<B::Sampler, OutOfMemory>;
+    fn create_sampler(&self, info: image::SamplerInfo) -> Result<B::Sampler, AllocationError>;
 
     /// Destroy a sampler object
     fn destroy_sampler(&self, sampler: B::Sampler);
