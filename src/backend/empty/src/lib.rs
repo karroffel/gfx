@@ -12,9 +12,18 @@ use crate::hal::{
 use std::borrow::Borrow;
 use std::ops::Range;
 
-/// Dummy backend.
+/// generate a new unique ID
+fn gen_id() -> u128 {
+    let id = uuid::Uuid::new_v4();
+    let bytes = id.as_bytes();
+    let bytes_ptr = bytes.as_ptr();
+
+    unsafe { std::ptr::read_unaligned(bytes_ptr as *const u128) }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Backend {}
+pub struct Backend;
+
 impl hal::Backend for Backend {
     type PhysicalDevice = PhysicalDevice;
     type Device = Device;
@@ -23,15 +32,15 @@ impl hal::Backend for Backend {
     type Swapchain = Swapchain;
 
     type QueueFamily = QueueFamily;
-    type CommandQueue = RawCommandQueue;
-    type CommandBuffer = RawCommandBuffer;
-
-    type Memory = ();
-    type CommandPool = RawCommandPool;
+    type CommandQueue = CommandQueue;
+    type CommandBuffer = CommandBuffer;
 
     type ShaderModule = ();
     type RenderPass = ();
+
     type Framebuffer = ();
+    type Memory = ();
+    type CommandPool = CommandPool;
 
     type Buffer = ();
     type BufferView = ();
@@ -43,28 +52,201 @@ impl hal::Backend for Backend {
     type GraphicsPipeline = ();
     type PipelineCache = ();
     type PipelineLayout = ();
-    type DescriptorSetLayout = ();
     type DescriptorPool = DescriptorPool;
     type DescriptorSet = ();
+    type DescriptorSetLayout = ();
 
     type Fence = ();
     type Semaphore = ();
     type QueryPool = ();
 }
 
-/// Dummy physical device.
-pub struct PhysicalDevice;
+pub struct PhysicalDevice {
+    pub format_properties: image::FormatProperties,
+    pub memory_properties: hal::MemoryProperties,
+    pub features: hal::Features,
+    pub limits: hal::Limits,
+}
+
+impl Default for PhysicalDevice {
+    fn default() -> Self {
+        let format_properties = {
+            image::FormatProperties {
+                max_extent: hal::image::Extent {
+                    width: 65535,
+                    height: 65535,
+                    depth: 65535,
+                },
+                max_levels: u8::max_value(),
+                max_layers: 65535,
+                sample_count_mask: 64,
+                max_resource_size: 8 * 1024 * 1024 * 1024, // 8 Go
+            }
+        };
+        let memory_properties = {
+            // values taken from a RX 590 (AMD RADV POLARIS10)
+
+            let memory_heaps = {
+                let device_local = 8321499136;
+                let host_mem = 8589934592;
+                let cached = 268435456;
+
+                vec![device_local, cached, host_mem]
+            };
+
+            let memory_types = {
+                let device_local = hal::MemoryType {
+                    heap_index: 0,
+                    properties: hal::memory::Properties::DEVICE_LOCAL,
+                };
+
+                let host_mem = hal::MemoryType {
+                    heap_index: 2,
+                    properties: hal::memory::Properties::COHERENT
+                        | hal::memory::Properties::CPU_VISIBLE,
+                };
+
+                let device_local_cpu_visible = hal::MemoryType {
+                    heap_index: 1,
+                    properties: hal::memory::Properties::DEVICE_LOCAL
+                        | hal::memory::Properties::COHERENT
+                        | hal::memory::Properties::CPU_VISIBLE,
+                };
+
+                let cpu_cached = hal::MemoryType {
+                    heap_index: 2,
+                    properties: hal::memory::Properties::CPU_CACHED
+                        | hal::memory::Properties::COHERENT
+                        | hal::memory::Properties::CPU_VISIBLE,
+                };
+
+                vec![device_local, host_mem, device_local_cpu_visible, cpu_cached]
+            };
+
+            hal::MemoryProperties {
+                memory_types,
+                memory_heaps,
+            }
+        };
+
+        let limits = {
+            // taken from a RX 590 (AMD RADV POLARIS10)
+            hal::Limits {
+                max_image_1d_size: 16384,
+                max_image_2d_size: 16384,
+                max_image_3d_size: 2048,
+                max_image_cube_size: 16384,
+                max_image_array_layers: 0,
+                max_texel_elements: 134217728,
+                max_uniform_buffer_range: 0,
+                max_storage_buffer_range: 0,
+                max_push_constants_size: 0,
+                max_memory_allocation_count: 0,
+                max_sampler_allocation_count: 0,
+                max_bound_descriptor_sets: 0,
+                max_per_stage_descriptor_samplers: 0,
+                max_per_stage_descriptor_uniform_buffers: 0,
+                max_per_stage_descriptor_storage_buffers: 0,
+                max_per_stage_descriptor_sampled_images: 0,
+                max_per_stage_descriptor_storage_images: 0,
+                max_per_stage_descriptor_input_attachments: 0,
+                max_per_stage_resources: 0,
+                max_descriptor_set_samplers: 0,
+                max_descriptor_set_uniform_buffers: 0,
+                max_descriptor_set_uniform_buffers_dynamic: 0,
+                max_descriptor_set_storage_buffers: 0,
+                max_descriptor_set_storage_buffers_dynamic: 0,
+                max_descriptor_set_sampled_images: 0,
+                max_descriptor_set_storage_images: 0,
+                max_descriptor_set_input_attachments: 0,
+                max_vertex_input_attributes: 32,
+                max_vertex_input_bindings: 32,
+                max_vertex_input_attribute_offset: 2047,
+                max_vertex_input_binding_stride: 2048,
+                max_vertex_output_components: 128,
+                max_patch_size: 32,
+                max_geometry_shader_invocations: 0,
+                max_geometry_input_components: 0,
+                max_geometry_output_components: 0,
+                max_geometry_output_vertices: 0,
+                max_geometry_total_output_components: 0,
+                max_fragment_input_components: 0,
+                max_fragment_output_attachments: 0,
+                max_fragment_dual_source_attachments: 0,
+                max_fragment_combined_output_resources: 0,
+                max_compute_shared_memory_size: 0,
+                max_compute_work_group_count: [65535, 65535, 65535],
+                max_compute_work_group_invocations: 0,
+                max_compute_work_group_size: [2048, 2048, 2048],
+                max_draw_indexed_index_value: 0,
+                max_draw_indirect_count: 0,
+                max_sampler_lod_bias: 0.0,
+                max_sampler_anisotropy: 16.0,
+                max_viewports: 16,
+                max_viewport_dimensions: [16384, 16384],
+                max_framebuffer_extent: image::Extent {
+                    width: 16384,
+                    height: 16384,
+                    depth: 1024,
+                },
+                min_memory_map_alignment: 0,
+                buffer_image_granularity: 64,
+                min_texel_buffer_offset_alignment: 1,
+                min_uniform_buffer_offset_alignment: 4,
+                min_storage_buffer_offset_alignment: 4,
+                framebuffer_color_samples_count: 15,
+                framebuffer_depth_samples_count: 15,
+                framebuffer_stencil_samples_count: 15,
+                max_color_attachments: 8,
+                standard_sample_locations: false,
+                optimal_buffer_copy_offset_alignment: 128,
+                optimal_buffer_copy_pitch_alignment: 128,
+                non_coherent_atom_size: 64,
+                min_vertex_input_binding_stride_alignment: 1,
+            }
+        };
+
+        PhysicalDevice {
+            format_properties,
+            memory_properties,
+            features: hal::Features::all(),
+            limits,
+        }
+    }
+}
+
 impl hal::PhysicalDevice<Backend> for PhysicalDevice {
     unsafe fn open(
         &self,
-        _: &[(&QueueFamily, &[hal::QueuePriority])],
+        families: &[(&QueueFamily, &[hal::QueuePriority])],
         _: hal::Features,
     ) -> Result<hal::Gpu<Backend>, error::DeviceCreationError> {
-        unimplemented!()
+        let queues = {
+            families
+                .into_iter()
+                .map(|&(family, priority)| {
+                    let fam = family.clone();
+                    let mut family_raw = hal::backend::RawQueueGroup::new(fam);
+
+                    for id in 0..priority.len() {
+                        let queue = CommandQueue { id };
+
+                        family_raw.add_queue(queue);
+                    }
+
+                    family_raw
+                })
+                .collect()
+        };
+
+        Ok(hal::Gpu {
+            device: Device::new(),
+            queues: queue::Queues::new(queues),
+        })
     }
 
     fn format_properties(&self, _: Option<format::Format>) -> format::Properties {
-        unimplemented!()
+        Default::default()
     }
 
     fn image_format_properties(
@@ -75,37 +257,38 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
         _: image::Usage,
         _: image::ViewCapabilities,
     ) -> Option<image::FormatProperties> {
-        unimplemented!()
+        Some(self.format_properties)
     }
 
     fn memory_properties(&self) -> hal::MemoryProperties {
-        unimplemented!()
+        self.memory_properties.clone()
     }
 
     fn features(&self) -> hal::Features {
-        unimplemented!()
+        self.features
     }
 
     fn limits(&self) -> hal::Limits {
-        unimplemented!()
+        self.limits
     }
 }
 
-/// Dummy command queue doing nothing.
-pub struct RawCommandQueue;
-impl queue::RawCommandQueue<Backend> for RawCommandQueue {
+pub struct CommandQueue {
+    pub id: usize,
+}
+
+impl queue::RawCommandQueue<Backend> for CommandQueue {
     unsafe fn submit<'a, T, Ic, S, Iw, Is>(
         &mut self,
         _: queue::Submission<Ic, Iw, Is>,
         _: Option<&()>,
     ) where
-        T: 'a + Borrow<RawCommandBuffer>,
+        T: 'a + Borrow<CommandBuffer>,
         Ic: IntoIterator<Item = &'a T>,
         S: 'a + Borrow<()>,
         Iw: IntoIterator<Item = (&'a S, pso::PipelineStage)>,
         Is: IntoIterator<Item = &'a S>,
     {
-        unimplemented!()
     }
 
     unsafe fn present<'a, W, Is, S, Iw>(&mut self, _: Is, _: Iw) -> Result<(), ()>
@@ -115,28 +298,32 @@ impl queue::RawCommandQueue<Backend> for RawCommandQueue {
         S: 'a + Borrow<()>,
         Iw: IntoIterator<Item = &'a S>,
     {
-        unimplemented!()
+        Ok(())
     }
 
     fn wait_idle(&self) -> Result<(), error::HostExecutionError> {
-        unimplemented!()
+        Ok(())
     }
 }
 
-/// Dummy device doing nothing.
 pub struct Device;
+
+impl Device {
+    pub fn new() -> Self {
+        Device
+    }
+}
+
 impl hal::Device<Backend> for Device {
     unsafe fn create_command_pool(
         &self,
         _: queue::QueueFamilyId,
         _: pool::CommandPoolCreateFlags,
-    ) -> Result<RawCommandPool, device::OutOfMemory> {
-        unimplemented!()
+    ) -> Result<CommandPool, device::OutOfMemory> {
+        Ok(CommandPool { buffers: vec![] })
     }
 
-    unsafe fn destroy_command_pool(&self, _: RawCommandPool) {
-        unimplemented!()
-    }
+    unsafe fn destroy_command_pool(&self, _: CommandPool) {}
 
     unsafe fn allocate_memory(
         &self,
@@ -465,38 +652,61 @@ impl hal::Device<Backend> for Device {
     }
 }
 
-#[derive(Debug)]
-pub struct QueueFamily;
-impl queue::QueueFamily for QueueFamily {
-    fn queue_type(&self) -> hal::QueueType {
-        unimplemented!()
-    }
-    fn max_queues(&self) -> usize {
-        unimplemented!()
-    }
-    fn id(&self) -> queue::QueueFamilyId {
-        unimplemented!()
+#[derive(Debug, Clone)]
+pub struct QueueFamily {
+    pub queue_type: hal::QueueType,
+    pub max_queues: usize,
+    pub id: queue::QueueFamilyId,
+}
+
+impl QueueFamily {
+    pub fn new(queue_type: hal::QueueType) -> Self {
+        let id = gen_id() as usize;
+
+        QueueFamily {
+            queue_type,
+            max_queues: 16,
+            id: queue::QueueFamilyId(id),
+        }
     }
 }
 
-/// Dummy raw command pool.
-pub struct RawCommandPool;
-impl pool::RawCommandPool<Backend> for RawCommandPool {
+impl queue::QueueFamily for QueueFamily {
+    fn queue_type(&self) -> hal::QueueType {
+        self.queue_type
+    }
+    fn max_queues(&self) -> usize {
+        self.max_queues
+    }
+    fn id(&self) -> queue::QueueFamilyId {
+        self.id
+    }
+}
+
+pub struct CommandPool {
+    pub buffers: Vec<CommandBuffer>,
+}
+
+impl pool::RawCommandPool<Backend> for CommandPool {
     unsafe fn reset(&mut self) {
         unimplemented!()
     }
 
+    fn allocate_one(&mut self, level: RawLevel) -> CommandBuffer {
+        let buf = CommandBuffer {};
+    }
+
     unsafe fn free<I>(&mut self, _: I)
     where
-        I: IntoIterator<Item = RawCommandBuffer>,
+        I: IntoIterator<Item = CommandBuffer>,
     {
         unimplemented!()
     }
 }
 
-/// Dummy command buffer, which ignores all the calls.
-pub struct RawCommandBuffer;
-impl command::RawCommandBuffer<Backend> for RawCommandBuffer {
+pub struct CommandBuffer {}
+
+impl command::RawCommandBuffer<Backend> for CommandBuffer {
     unsafe fn begin(
         &mut self,
         _: command::CommandBufferFlags,
@@ -800,16 +1010,16 @@ impl command::RawCommandBuffer<Backend> for RawCommandBuffer {
 
     unsafe fn execute_commands<'a, T, I>(&mut self, _: I)
     where
-        T: 'a + Borrow<RawCommandBuffer>,
+        T: 'a + Borrow<CommandBuffer>,
         I: IntoIterator<Item = &'a T>,
     {
         unimplemented!()
     }
 }
 
-// Dummy descriptor pool.
 #[derive(Debug)]
 pub struct DescriptorPool;
+
 impl pso::DescriptorPool<Backend> for DescriptorPool {
     unsafe fn free_sets<I>(&mut self, _descriptor_sets: I)
     where
@@ -823,8 +1033,8 @@ impl pso::DescriptorPool<Backend> for DescriptorPool {
     }
 }
 
-/// Dummy surface.
 pub struct Surface;
+
 impl hal::Surface<Backend> for Surface {
     fn kind(&self) -> hal::image::Kind {
         unimplemented!()
@@ -846,8 +1056,8 @@ impl hal::Surface<Backend> for Surface {
     }
 }
 
-/// Dummy swapchain.
 pub struct Swapchain;
+
 impl hal::Swapchain<Backend> for Swapchain {
     unsafe fn acquire_image(
         &mut self,
