@@ -12,8 +12,10 @@ use crate::hal::{
 use std::borrow::Borrow;
 use std::ops::Range;
 
+pub type UniqueId = u128;
+
 /// generate a new unique ID
-fn gen_id() -> u128 {
+fn gen_id() -> UniqueId {
     let id = uuid::Uuid::new_v4();
     let bytes = id.as_bytes();
     let bytes_ptr = bytes.as_ptr();
@@ -61,6 +63,7 @@ impl hal::Backend for Backend {
     type QueryPool = ();
 }
 
+#[derive(Clone, Debug)]
 pub struct PhysicalDevice {
     pub format_properties: image::FormatProperties,
     pub memory_properties: hal::MemoryProperties,
@@ -273,6 +276,7 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CommandQueue {
     pub id: usize,
 }
@@ -289,6 +293,7 @@ impl queue::RawCommandQueue<Backend> for CommandQueue {
         Iw: IntoIterator<Item = (&'a S, pso::PipelineStage)>,
         Is: IntoIterator<Item = &'a S>,
     {
+        // Do nothing
     }
 
     unsafe fn present<'a, W, Is, S, Iw>(&mut self, _: Is, _: Iw) -> Result<(), ()>
@@ -298,14 +303,17 @@ impl queue::RawCommandQueue<Backend> for CommandQueue {
         S: 'a + Borrow<()>,
         Iw: IntoIterator<Item = &'a S>,
     {
+        // Nothing to do
         Ok(())
     }
 
     fn wait_idle(&self) -> Result<(), error::HostExecutionError> {
+        // Nothing to do
         Ok(())
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Device;
 
 impl Device {
@@ -320,7 +328,7 @@ impl hal::Device<Backend> for Device {
         _: queue::QueueFamilyId,
         _: pool::CommandPoolCreateFlags,
     ) -> Result<CommandPool, device::OutOfMemory> {
-        Ok(CommandPool { buffers: vec![] })
+        Ok(CommandPool::new())
     }
 
     unsafe fn destroy_command_pool(&self, _: CommandPool) {}
@@ -652,7 +660,7 @@ impl hal::Device<Backend> for Device {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct QueueFamily {
     pub queue_type: hal::QueueType,
     pub max_queues: usize,
@@ -683,28 +691,62 @@ impl queue::QueueFamily for QueueFamily {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CommandPool {
+    pub id: UniqueId,
     pub buffers: Vec<CommandBuffer>,
+}
+
+impl CommandPool {
+    pub fn new() -> Self {
+        CommandPool {
+            id: gen_id(),
+            buffers: vec![],
+        }
+    }
 }
 
 impl pool::RawCommandPool<Backend> for CommandPool {
     unsafe fn reset(&mut self) {
-        unimplemented!()
+        self.buffers.clear();
     }
 
-    fn allocate_one(&mut self, level: RawLevel) -> CommandBuffer {
-        let buf = CommandBuffer {};
+    fn allocate_one(&mut self, _level: command::RawLevel) -> CommandBuffer {
+        let buf = CommandBuffer::new();
+
+        self.buffers.push(buf.clone());
+
+        buf
     }
 
-    unsafe fn free<I>(&mut self, _: I)
+    unsafe fn free<I>(&mut self, bufs: I)
     where
         I: IntoIterator<Item = CommandBuffer>,
     {
-        unimplemented!()
+        for buf in bufs {
+            let idx = self
+                .buffers
+                .iter()
+                .enumerate()
+                .find(|(_i, cmd)| cmd.id == buf.id);
+
+            if let Some((idx, _)) = idx {
+                self.buffers.swap_remove(idx);
+            }
+        }
     }
 }
 
-pub struct CommandBuffer {}
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CommandBuffer {
+    pub id: UniqueId,
+}
+
+impl CommandBuffer {
+    pub fn new() -> Self {
+        CommandBuffer { id: gen_id() }
+    }
+}
 
 impl command::RawCommandBuffer<Backend> for CommandBuffer {
     unsafe fn begin(
@@ -712,16 +754,11 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         _: command::CommandBufferFlags,
         _: command::CommandBufferInheritanceInfo<Backend>,
     ) {
-        unimplemented!()
     }
 
-    unsafe fn finish(&mut self) {
-        unimplemented!()
-    }
+    unsafe fn finish(&mut self) {}
 
-    unsafe fn reset(&mut self, _: bool) {
-        unimplemented!()
-    }
+    unsafe fn reset(&mut self, _: bool) {}
 
     unsafe fn pipeline_barrier<'a, T>(
         &mut self,
@@ -732,19 +769,15 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         T: IntoIterator,
         T::Item: Borrow<memory::Barrier<'a, Backend>>,
     {
-        unimplemented!()
     }
 
     unsafe fn fill_buffer<R>(&mut self, _: &(), _: R, _: u32)
     where
         R: RangeArg<buffer::Offset>,
     {
-        unimplemented!()
     }
 
-    unsafe fn update_buffer(&mut self, _: &(), _: buffer::Offset, _: &[u8]) {
-        unimplemented!()
-    }
+    unsafe fn update_buffer(&mut self, _: &(), _: buffer::Offset, _: &[u8]) {}
 
     unsafe fn clear_image<T>(
         &mut self,
@@ -757,7 +790,6 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         T: IntoIterator,
         T::Item: Borrow<image::SubresourceRange>,
     {
-        unimplemented!()
     }
 
     unsafe fn clear_attachments<T, U>(&mut self, _: T, _: U)
@@ -767,7 +799,6 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         U: IntoIterator,
         U::Item: Borrow<pso::ClearRect>,
     {
-        unimplemented!()
     }
 
     unsafe fn resolve_image<T>(&mut self, _: &(), _: image::Layout, _: &(), _: image::Layout, _: T)
@@ -775,7 +806,6 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         T: IntoIterator,
         T::Item: Borrow<command::ImageResolve>,
     {
-        unimplemented!()
     }
 
     unsafe fn blit_image<T>(
@@ -790,19 +820,15 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         T: IntoIterator,
         T::Item: Borrow<command::ImageBlit>,
     {
-        unimplemented!()
     }
 
-    unsafe fn bind_index_buffer(&mut self, _: buffer::IndexBufferView<Backend>) {
-        unimplemented!()
-    }
+    unsafe fn bind_index_buffer(&mut self, _: buffer::IndexBufferView<Backend>) {}
 
     unsafe fn bind_vertex_buffers<I, T>(&mut self, _: u32, _: I)
     where
         I: IntoIterator<Item = (T, buffer::Offset)>,
         T: Borrow<()>,
     {
-        unimplemented!()
     }
 
     unsafe fn set_viewports<T>(&mut self, _: u32, _: T)
@@ -810,7 +836,6 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         T: IntoIterator,
         T::Item: Borrow<pso::Viewport>,
     {
-        unimplemented!()
     }
 
     unsafe fn set_scissors<T>(&mut self, _: u32, _: T)
@@ -818,36 +843,21 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         T: IntoIterator,
         T::Item: Borrow<pso::Rect>,
     {
-        unimplemented!()
     }
 
-    unsafe fn set_stencil_reference(&mut self, _: pso::Face, _: pso::StencilValue) {
-        unimplemented!()
-    }
+    unsafe fn set_stencil_reference(&mut self, _: pso::Face, _: pso::StencilValue) {}
 
-    unsafe fn set_stencil_read_mask(&mut self, _: pso::Face, _: pso::StencilValue) {
-        unimplemented!()
-    }
+    unsafe fn set_stencil_read_mask(&mut self, _: pso::Face, _: pso::StencilValue) {}
 
-    unsafe fn set_stencil_write_mask(&mut self, _: pso::Face, _: pso::StencilValue) {
-        unimplemented!()
-    }
+    unsafe fn set_stencil_write_mask(&mut self, _: pso::Face, _: pso::StencilValue) {}
 
-    unsafe fn set_blend_constants(&mut self, _: pso::ColorValue) {
-        unimplemented!()
-    }
+    unsafe fn set_blend_constants(&mut self, _: pso::ColorValue) {}
 
-    unsafe fn set_depth_bounds(&mut self, _: Range<f32>) {
-        unimplemented!()
-    }
+    unsafe fn set_depth_bounds(&mut self, _: Range<f32>) {}
 
-    unsafe fn set_line_width(&mut self, _: f32) {
-        unimplemented!()
-    }
+    unsafe fn set_line_width(&mut self, _: f32) {}
 
-    unsafe fn set_depth_bias(&mut self, _: pso::DepthBias) {
-        unimplemented!()
-    }
+    unsafe fn set_depth_bias(&mut self, _: pso::DepthBias) {}
 
     unsafe fn begin_render_pass<T>(
         &mut self,
@@ -860,20 +870,13 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         T: IntoIterator,
         T::Item: Borrow<command::ClearValueRaw>,
     {
-        unimplemented!()
     }
 
-    unsafe fn next_subpass(&mut self, _: command::SubpassContents) {
-        unimplemented!()
-    }
+    unsafe fn next_subpass(&mut self, _: command::SubpassContents) {}
 
-    unsafe fn end_render_pass(&mut self) {
-        unimplemented!()
-    }
+    unsafe fn end_render_pass(&mut self) {}
 
-    unsafe fn bind_graphics_pipeline(&mut self, _: &()) {
-        unimplemented!()
-    }
+    unsafe fn bind_graphics_pipeline(&mut self, _: &()) {}
 
     unsafe fn bind_graphics_descriptor_sets<I, J>(&mut self, _: &(), _: usize, _: I, _: J)
     where
@@ -882,12 +885,9 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         J: IntoIterator,
         J::Item: Borrow<command::DescriptorSetOffset>,
     {
-        unimplemented!()
     }
 
-    unsafe fn bind_compute_pipeline(&mut self, _: &()) {
-        unimplemented!()
-    }
+    unsafe fn bind_compute_pipeline(&mut self, _: &()) {}
 
     unsafe fn bind_compute_descriptor_sets<I, J>(&mut self, _: &(), _: usize, _: I, _: J)
     where
@@ -896,23 +896,17 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         J: IntoIterator,
         J::Item: Borrow<command::DescriptorSetOffset>,
     {
-        unimplemented!()
     }
 
-    unsafe fn dispatch(&mut self, _: hal::WorkGroupCount) {
-        unimplemented!()
-    }
+    unsafe fn dispatch(&mut self, _: hal::WorkGroupCount) {}
 
-    unsafe fn dispatch_indirect(&mut self, _: &(), _: buffer::Offset) {
-        unimplemented!()
-    }
+    unsafe fn dispatch_indirect(&mut self, _: &(), _: buffer::Offset) {}
 
     unsafe fn copy_buffer<T>(&mut self, _: &(), _: &(), _: T)
     where
         T: IntoIterator,
         T::Item: Borrow<command::BufferCopy>,
     {
-        unimplemented!()
     }
 
     unsafe fn copy_image<T>(&mut self, _: &(), _: image::Layout, _: &(), _: image::Layout, _: T)
@@ -920,7 +914,6 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         T: IntoIterator,
         T::Item: Borrow<command::ImageCopy>,
     {
-        unimplemented!()
     }
 
     unsafe fn copy_buffer_to_image<T>(&mut self, _: &(), _: &(), _: image::Layout, _: T)
@@ -928,7 +921,6 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         T: IntoIterator,
         T::Item: Borrow<command::BufferImageCopy>,
     {
-        unimplemented!()
     }
 
     unsafe fn copy_image_to_buffer<T>(&mut self, _: &(), _: image::Layout, _: &(), _: T)
@@ -936,12 +928,9 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         T: IntoIterator,
         T::Item: Borrow<command::BufferImageCopy>,
     {
-        unimplemented!()
     }
 
-    unsafe fn draw(&mut self, _: Range<hal::VertexCount>, _: Range<hal::InstanceCount>) {
-        unimplemented!()
-    }
+    unsafe fn draw(&mut self, _: Range<hal::VertexCount>, _: Range<hal::InstanceCount>) {}
 
     unsafe fn draw_indexed(
         &mut self,
@@ -949,12 +938,9 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         _: hal::VertexOffset,
         _: Range<hal::InstanceCount>,
     ) {
-        unimplemented!()
     }
 
-    unsafe fn draw_indirect(&mut self, _: &(), _: buffer::Offset, _: hal::DrawCount, _: u32) {
-        unimplemented!()
-    }
+    unsafe fn draw_indirect(&mut self, _: &(), _: buffer::Offset, _: hal::DrawCount, _: u32) {}
 
     unsafe fn draw_indexed_indirect(
         &mut self,
@@ -963,20 +949,13 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         _: hal::DrawCount,
         _: u32,
     ) {
-        unimplemented!()
     }
 
-    unsafe fn begin_query(&mut self, _: query::Query<Backend>, _: query::ControlFlags) {
-        unimplemented!()
-    }
+    unsafe fn begin_query(&mut self, _: query::Query<Backend>, _: query::ControlFlags) {}
 
-    unsafe fn end_query(&mut self, _: query::Query<Backend>) {
-        unimplemented!()
-    }
+    unsafe fn end_query(&mut self, _: query::Query<Backend>) {}
 
-    unsafe fn reset_query_pool(&mut self, _: &(), _: Range<query::Id>) {
-        unimplemented!()
-    }
+    unsafe fn reset_query_pool(&mut self, _: &(), _: Range<query::Id>) {}
 
     unsafe fn copy_query_pool_results(
         &mut self,
@@ -987,12 +966,9 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         _: buffer::Offset,
         _: query::ResultFlags,
     ) {
-        unimplemented!()
     }
 
-    unsafe fn write_timestamp(&mut self, _: pso::PipelineStage, _: query::Query<Backend>) {
-        unimplemented!()
-    }
+    unsafe fn write_timestamp(&mut self, _: pso::PipelineStage, _: query::Query<Backend>) {}
 
     unsafe fn push_graphics_constants(
         &mut self,
@@ -1001,23 +977,19 @@ impl command::RawCommandBuffer<Backend> for CommandBuffer {
         _: u32,
         _: &[u32],
     ) {
-        unimplemented!()
     }
 
-    unsafe fn push_compute_constants(&mut self, _: &(), _: u32, _: &[u32]) {
-        unimplemented!()
-    }
+    unsafe fn push_compute_constants(&mut self, _: &(), _: u32, _: &[u32]) {}
 
     unsafe fn execute_commands<'a, T, I>(&mut self, _: I)
     where
         T: 'a + Borrow<CommandBuffer>,
         I: IntoIterator<Item = &'a T>,
     {
-        unimplemented!()
     }
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DescriptorPool;
 
 impl pso::DescriptorPool<Backend> for DescriptorPool {
@@ -1028,12 +1000,25 @@ impl pso::DescriptorPool<Backend> for DescriptorPool {
         unimplemented!()
     }
 
+    unsafe fn allocate_set(&mut self, _layout: &()) -> Result<(), pso::AllocationError> {
+        unimplemented!()
+    }
+
     unsafe fn reset(&mut self) {
         unimplemented!()
     }
 }
 
-pub struct Surface;
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Surface {
+    pub id: UniqueId,
+}
+
+impl Surface {
+    pub fn new() -> Self {
+        Surface { id: gen_id() }
+    }
+}
 
 impl hal::Surface<Backend> for Surface {
     fn kind(&self) -> hal::image::Kind {
@@ -1051,11 +1036,15 @@ impl hal::Surface<Backend> for Surface {
         unimplemented!()
     }
 
-    fn supports_queue_family(&self, _: &QueueFamily) -> bool {
-        unimplemented!()
+    fn supports_queue_family(&self, queue_family: &QueueFamily) -> bool {
+        match queue_family.queue_type() {
+            QueueType::General | QueueType::Graphics => true,
+            _ => false,
+        }
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Swapchain;
 
 impl hal::Swapchain<Backend> for Swapchain {
@@ -1069,6 +1058,7 @@ impl hal::Swapchain<Backend> for Swapchain {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Instance;
 
 impl Instance {
@@ -1079,13 +1069,33 @@ impl Instance {
 
     #[cfg(feature = "winit")]
     pub fn create_surface(&self, _: &winit::Window) -> Surface {
-        unimplemented!()
+        Surface::new()
     }
 }
 
 impl hal::Instance for Instance {
     type Backend = Backend;
     fn enumerate_adapters(&self) -> Vec<hal::Adapter<Backend>> {
-        vec![]
+        let info = hal::AdapterInfo {
+            name: "EmptyDevice".to_string(),
+            vendor: 42,
+            device: 1337,
+            device_type: hal::adapter::DeviceType::DiscreteGpu,
+        };
+
+        let queue_families = vec![
+            QueueFamily::new(hal::QueueType::General),
+            QueueFamily::new(hal::QueueType::Graphics),
+            QueueFamily::new(hal::QueueType::Compute),
+            QueueFamily::new(hal::QueueType::Transfer),
+        ];
+
+        let default_adapter = hal::Adapter {
+            physical_device: PhysicalDevice::default(),
+            queue_families,
+            info,
+        };
+
+        vec![default_adapter]
     }
 }
